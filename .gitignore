@@ -1,0 +1,25 @@
+# Xcode
+.DS_Store
+*/build/
+*.derivedData
+!default.mode1v3
+!default.pbxuser
+!default.perspectivev3
+!workspace.xcworkspace
+!xcuserdata
+*.xccheckout
+*.moved-aside
+*.xcsnapshots
+*.xclayout
+*.pbuser
+*.perspective*
+*.mode1v3
+*.mode2v3
+*.scope
+*.xcuserstate
+
+# Swift Package Manager
+.build/
+
+# CocoaPods
+Pods/
