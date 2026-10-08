@@ -98,7 +98,7 @@ function inIndia(lat, lng) {
 // Uses curl rather than fetch: Node's fetch could not connect to overpass-api.de from GitHub runners.
 function overpass(query, timeoutSec) {
   let lastErr;
-  for (let attempt = 0; attempt < 6; attempt++) {
+  for (let attempt = 0; attempt < 4; attempt++) {
     const url = OVERPASS[attempt % OVERPASS.length];
     try {
       const body = execFileSync("curl", [
@@ -110,7 +110,7 @@ function overpass(query, timeoutSec) {
       lastErr = new Error(`${url}: ${String(e.stderr || e.message).trim().slice(0, 300)}`);
     }
     log(`  overpass attempt ${attempt + 1} failed: ${lastErr.message}`);
-    sleepSync(20000 * (attempt + 1));
+    sleepSync(10000 * (attempt + 1));
   }
   throw lastErr;
 }
@@ -124,10 +124,10 @@ function fetchOsmStations() {
   // Overpass returns partial results with a "remark" when a query runs out of time or memory,
   // so each tile checks for that and splits itself into four smaller tiles when it happens.
   const fetchTile = ([s, w, n, e], depth = 0) => {
-    const q = `[out:json][timeout:240];area["ISO3166-1"="IN"][admin_level=2]->.in;nwr["amenity"="fuel"](${s},${w},${n},${e})(area.in);out center tags qt;`;
+    const q = `[out:json][timeout:180];nwr["amenity"="fuel"](${s},${w},${n},${e});out center tags qt;`;
     let data;
     try {
-      data = overpass(q, 240);
+      data = overpass(q, 180);
     } catch (err) {
       if (depth >= 3) throw err;
       data = { remark: `request failed: ${err.message}` };
@@ -201,8 +201,10 @@ async function fetchXp100() {
 
 // ---------- 3. GeoNames places ----------
 
+// Loads GeoNames towns in and around India. Pumps whose nearest town is outside India are dropped,
+// since the Overpass tiles are plain bounding boxes that also cover neighbouring countries.
 function loadPlaces() {
-  if (!fs.existsSync("cities5000.txt")) { log("  GeoNames file missing, skipping place names"); return null; }
+  if (!fs.existsSync("cities5000.txt")) throw new Error("cities5000.txt missing (download it from GeoNames)");
   const states = new Map();
   if (fs.existsSync("admin1CodesASCII.txt")) {
     for (const line of fs.readFileSync("admin1CodesASCII.txt", "utf8").split("\n")) {
@@ -214,17 +216,19 @@ function loadPlaces() {
   let n = 0;
   for (const line of fs.readFileSync("cities5000.txt", "utf8").split("\n")) {
     const f = line.split("\t");
-    if (f[8] !== "IN") continue;
-    grid.add({ name: f[2], lat: +f[4], lng: +f[5], state: states.get(`IN.${f[10]}`) || "", pop: +f[14] });
-    n++;
+    const lat = +f[4];
+    const lng = +f[5];
+    if (!(lat > 0 && lat < 42 && lng > 60 && lng < 102)) continue;
+    grid.add({ name: f[2], lat, lng, country: f[8], state: f[8] === "IN" ? states.get(`IN.${f[10]}`) || "" : "" });
+    if (f[8] === "IN") n++;
   }
-  log(`  GeoNames places: ${n}`);
+  log(`  GeoNames places in India: ${n}`);
   return grid;
 }
 
 function areaLabel(places, p, fallbackTags = {}) {
   if (places) {
-    const hit = places.nearest(p, 60);
+    const hit = places.nearest(p, 60, (x) => x.country === "IN");
     if (hit) return [hit.km > 15 ? `near ${hit.item.name}` : hit.item.name, hit.item.state].filter(Boolean).join(", ");
   }
   return [fallbackTags["addr:city"] || fallbackTags["addr:district"], fallbackTags["addr:state"]].filter(Boolean).join(", ");
@@ -234,10 +238,14 @@ function areaLabel(places, p, fallbackTags = {}) {
 
 async function main() {
   log("OpenStreetMap...");
-  const osm = fetchOsmStations();
-  if (osm.length < 5000) throw new Error(`Only ${osm.length} OSM stations, refusing to overwrite data`);
-
   const places = loadPlaces();
+  const osmAll = fetchOsmStations();
+  const osm = osmAll.filter((p) => {
+    const hit = places.nearest(p, 150);
+    return hit && hit.item.country === "IN";
+  });
+  log(`  in India: ${osm.length} of ${osmAll.length}`);
+  if (osm.length < 10000) throw new Error(`Only ${osm.length} OSM stations, refusing to overwrite data`);
 
   const stations = [];
   const grid = new Grid(0.05);
