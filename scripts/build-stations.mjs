@@ -27,9 +27,9 @@ export function classifyBrand(tags) {
   if (/jio|reliance/.test(t)) return "Jio-bp";
   if (/nayara|essar/.test(t)) return "Nayara";
   if (/\bshell\b/.test(t)) return "Shell";
-  if (/indian ?oil|\biocl?\b|\bibp\b|\bservo\b/.test(t) || tags["brand:wikidata"] === "Q1289348") return "IndianOil";
-  if (/\bhp\b|hindustan petrol|\bhpcl\b|\bh\.p\.?\b/.test(t) || tags["brand:wikidata"] === "Q1619375") return "HP";
-  if (/bharat petrol|\bbpcl\b|\bbp\b/.test(t)) return "BPCL";
+  if (/indian ?oil|india oil|\biocl?\b|\bibp\b|\bservo\b|assam oil/.test(t) || tags["brand:wikidata"] === "Q1289348") return "IndianOil";
+  if (/\bhp\b|\bh\.? ?p\b|hindust?h?an petrol|\bhpcl\b/.test(t) || tags["brand:wikidata"] === "Q1619375") return "HP";
+  if (/b?h?aratt?h? petrol|\bbpcl\b|\bbp\b|^bharath?$/.test(t)) return "BPCL";
   return "Other";
 }
 
@@ -37,7 +37,7 @@ export function classifyBrand(tags) {
 export function isGasOnly(tags, brand) {
   if (brand !== "Other") return false;
   const t = [tags.brand, tags.name, tags.operator].filter(Boolean).join(" ").toLowerCase();
-  return /\b(cng|lpg|png)\b|\bigl\b|\bmgl\b|gail gas|adani (total )?gas|gas station|autogas/.test(t);
+  return /\b(cng|lpg|png|gas|gail|igl|mgl|mngl)\b|autogas/.test(t);
 }
 
 export function titleCase(s) {
