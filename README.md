@@ -89,7 +89,7 @@ scripts/build-stations.mjs  Data build script
 
 ## Built with
 
-[Leaflet](https://leafletjs.com/), [Leaflet.markercluster](https://github.com/Leaflet/Leaflet.markercluster), [OpenStreetMap](https://www.openstreetmap.org/) and [CARTO](https://carto.com/) map tiles, [Nominatim](https://nominatim.org/) place search, and plain HTML, CSS and JavaScript.
+[Leaflet](https://leafletjs.com/), [Leaflet.markercluster](https://github.com/Leaflet/Leaflet.markercluster), [OpenStreetMap](https://www.openstreetmap.org/) map tiles (no API key needed), [Nominatim](https://nominatim.org/) place search, and plain HTML, CSS and JavaScript.
 
 ## Disclaimer
 

@@ -98,10 +98,11 @@
   // ---------- Map ----------
 
   const map = L.map("map", { zoomControl: true }).fitBounds(INDIA_BOUNDS);
-  L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png", {
+  // OpenStreetMap's standard tiles need no API key; CSS in .map-tiles darkens them to match the page.
+  L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
     maxZoom: 19,
-    subdomains: "abcd",
-    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>',
+    className: "map-tiles",
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
   }).addTo(map);
 
   const cluster = L.markerClusterGroup({
