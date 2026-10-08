@@ -121,27 +121,36 @@ function sleepSync(ms) {
 
 function fetchOsmStations() {
   const all = new Map();
-  const add = (data) => {
+  // Overpass returns partial results with a "remark" when a query runs out of time or memory,
+  // so each tile checks for that and splits itself into four smaller tiles when it happens.
+  const fetchTile = ([s, w, n, e], depth = 0) => {
+    const q = `[out:json][timeout:240];area["ISO3166-1"="IN"][admin_level=2]->.in;nwr["amenity"="fuel"](${s},${w},${n},${e})(area.in);out center tags qt;`;
+    let data;
+    try {
+      data = overpass(q, 240);
+    } catch (err) {
+      if (depth >= 3) throw err;
+      data = { remark: `request failed: ${err.message}` };
+    }
+    if (data.remark && /error|failed/i.test(data.remark)) {
+      if (depth >= 3) throw new Error(`Tile ${s},${w},${n},${e} still incomplete: ${data.remark}`);
+      log(`  tile ${s},${w},${n},${e} incomplete (${data.remark.slice(0, 120)}), splitting`);
+      const mLat = (s + n) / 2;
+      const mLng = (w + e) / 2;
+      for (const t of [[s, w, mLat, mLng], [s, mLng, mLat, e], [mLat, w, n, mLng], [mLat, mLng, n, e]]) fetchTile(t, depth + 1);
+      return;
+    }
     for (const el of data.elements) {
       const lat = el.lat ?? el.center?.lat;
       const lng = el.lon ?? el.center?.lon;
       if (lat == null || lng == null) continue;
       all.set(`${el.type}/${el.id}`, { lat, lng, tags: el.tags || {} });
     }
+    log(`  tile ${s},${w},${n},${e}: ${data.elements.length} (total ${all.size})`);
+    sleepSync(2000);
   };
-  const query = (bbox, t) =>
-    `[out:json][timeout:${t}][maxsize:2000000000];area["ISO3166-1"="IN"][admin_level=2]->.in;nwr["amenity"="fuel"](area.in)${bbox};out center tags qt;`;
-  try {
-    add(overpass(query("", 900), 900));
-    log(`  all India in one query: ${all.size}`);
-  } catch (e) {
-    // Fall back to four large tiles if the single query is refused.
-    log(`  single query failed (${e.message}), trying tiles`);
-    for (const [s, w, n, e2] of [[6, 68, 22, 83], [6, 83, 22, 98], [22, 68, 37.5, 83], [22, 83, 37.5, 98]]) {
-      add(overpass(query(`(${s},${w},${n},${e2})`, 600), 600));
-      log(`  tile ${s},${w}: total ${all.size}`);
-      sleepSync(5000);
-    }
+  for (let s = 6; s < 37.5; s += 4) {
+    for (let w = 68; w < 98; w += 5) fetchTile([s, w, Math.min(s + 4, 37.5), Math.min(w + 5, 98)]);
   }
   return [...all.values()];
 }
