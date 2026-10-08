@@ -1,0 +1,32 @@
+{
+  "about": "Ethanol free (E0) outlets that are not in IndianOil's official XP100 list, each named by the oil company or its launch coverage. The build script attaches the flag to the matching pump in OpenStreetMap: same brand, within radiusKm of near, and name or address matching the regex in match. Unmatched entries are skipped, never guessed. Add an outlet with a source link to include it.",
+  "outlets": [
+    {
+      "label": "BPCL Speed 100, BP Cubbon Park, Bengaluru",
+      "brand": "BPCL",
+      "fuel": "Speed 100",
+      "near": [12.9763, 77.5929],
+      "radiusKm": 2,
+      "match": "cubbon",
+      "source": "https://x.com/BPCLRetail1/status/2065405961981096428"
+    },
+    {
+      "label": "HP poWer 100, Niti Marg Auto Care Centre, New Delhi",
+      "brand": "HP",
+      "fuel": "poWer 100",
+      "near": [28.5975, 77.1880],
+      "radiusKm": 1.5,
+      "match": "niti|auto ?care|coco",
+      "source": "https://equitybulls.com/category.php?id=303911"
+    },
+    {
+      "label": "HP poWer 100, Osmania University outlet, Hyderabad",
+      "brand": "HP",
+      "fuel": "poWer 100",
+      "near": [17.4130, 78.5280],
+      "radiusKm": 2,
+      "match": "osmania|university|\\bo\\.? ?u\\.?\\b",
+      "source": "https://hindustanpetroleum.com/NewsroomDetails/378"
+    }
+  ]
+}

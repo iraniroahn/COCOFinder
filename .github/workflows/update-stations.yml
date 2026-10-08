@@ -1,0 +1,66 @@
+name: Update station data
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 2 * * 1" # every Monday, 07:47 IST
+  push:
+    branches: ["main", "claude/**"]
+    paths:
+      - "scripts/**"
+      - "data/e0-manual.json"
+      - ".github/workflows/update-stations.yml"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: update-stations-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install headless browser driver
+        run: npm install --no-save playwright-core@1.56.1
+
+      - name: Extract fuel stations from the OpenStreetMap India extract
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq osmium-tool
+          curl -sSfL -o india.osm.pbf https://download.geofabrik.de/asia/india-latest.osm.pbf
+          osmium tags-filter india.osm.pbf nwr/amenity=fuel -o fuel.osm.pbf --overwrite
+          osmium export fuel.osm.pbf -f geojsonseq -o fuel.geojsonseq --geometry-types=point,linestring,polygon -a type,id --overwrite
+          wc -l fuel.geojsonseq
+
+      - name: Download GeoNames places
+        run: |
+          curl -sSfL -o cities5000.zip https://download.geonames.org/export/dump/cities5000.zip
+          unzip -o -q cities5000.zip
+          curl -sSfL -o admin1CodesASCII.txt https://download.geonames.org/export/dump/admin1CodesASCII.txt
+
+      - name: Test helpers
+        run: node scripts/test-build.mjs
+
+      - name: Build data/stations.json
+        run: node scripts/build-stations.mjs
+
+      - name: Commit updated data
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/stations.json
+          if git diff --cached --quiet; then
+            echo "No changes"
+          else
+            git commit -m "Update station data"
+            git pull --rebase origin "${GITHUB_REF_NAME}"
+            git push origin "HEAD:${GITHUB_REF_NAME}"
+          fi
