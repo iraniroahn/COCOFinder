@@ -1,6 +1,6 @@
 // Quick checks for the pure helpers in build-stations.mjs. Run: node scripts/test-build.mjs
 import assert from "node:assert/strict";
-import { classifyBrand, isGasOnly, titleCase, areaLabel, Grid } from "./build-stations.mjs";
+import { classifyBrand, isGasOnly, titleCase, areaLabel, Grid, makeAdmin } from "./build-stations.mjs";
 
 const cases = [
   [{ brand: "Indian Oil", name: "Indian Oil" }, "IndianOil"],
@@ -63,5 +63,31 @@ assert.equal(areaLabel(geo, osmPlaces, { lat: 18.7550, lng: 73.4060 }), "Lonaval
 // No OpenStreetMap place nearby: fall back to the nearest GeoNames town.
 assert.equal(areaLabel(geo, osmPlaces, { lat: 18.85, lng: 73.30 }), "near Lonavla, Maharashtra");
 assert.equal(areaLabel(geo, null, { lat: 19.0390, lng: 72.8490 }), "Dharavi, Maharashtra");
+
+// Borders: an East Delhi pump next to Noida, and a Gurugram pump nearest to a Delhi town point.
+const box = (w, s2, e, n) => ({ type: "Polygon", coordinates: [[[w, s2], [e, s2], [e, n], [w, n], [w, s2]]] });
+const area = (name, level, geom) => ({ properties: { name, admin_level: String(level), boundary: "administrative" }, geometry: geom });
+const admin = makeAdmin([
+  area("Delhi", 4, box(77.0, 28.5, 77.345, 28.9)),
+  area("Haryana", 4, { type: "MultiPolygon", coordinates: [box(76.8, 28.3, 77.0, 28.9).coordinates, box(77.0, 28.3, 77.345, 28.5).coordinates] }),
+  area("Uttar Pradesh", 4, box(77.345, 28.3, 77.6, 28.9)),
+  area("East Delhi", 5, box(77.25, 28.55, 77.345, 28.7)),
+  area("New Delhi", 5, box(77.15, 28.55, 77.25, 28.7)),
+  area("Gautam Buddha Nagar District", 5, box(77.345, 28.3, 77.6, 28.7)),
+  area("Gurugram", 5, box(76.8, 28.3, 77.345, 28.5)),
+]);
+const ncrPlaces = grid([
+  { name: "Delhi", lat: 28.6139, lng: 77.2090, type: "city" },
+  { name: "Noida", lat: 28.5355, lng: 77.3910, type: "city" },
+  { name: "Gurgaon", lat: 28.4595, lng: 77.0266, type: "city" },
+  { name: "Gharoli", lat: 28.6105, lng: 77.3330, type: "neighbourhood" },
+  { name: "Sector 52A", lat: 28.4400, lng: 77.0880, type: "neighbourhood" },
+], 0.1);
+const ncrGeo = grid([{ name: "Delhi", lat: 28.65, lng: 77.23, country: "IN", state: "Delhi" }], 0.5);
+assert.equal(areaLabel(ncrGeo, ncrPlaces, { lat: 28.60734, lng: 77.33539 }, {}, admin), "Gharoli, East Delhi, Delhi");
+assert.equal(areaLabel(ncrGeo, ncrPlaces, { lat: 28.43838, lng: 77.08962 }, {}, admin), "Sector 52A, Gurgaon, Haryana");
+assert.equal(areaLabel(ncrGeo, ncrPlaces, { lat: 28.57, lng: 77.36 }, {}, admin), "Noida, Uttar Pradesh");
+assert.equal(areaLabel(ncrGeo, ncrPlaces, { lat: 28.62, lng: 77.20 }, {}, admin), "Delhi");
+assert.equal(admin.district({ lat: 28.4, lng: 77.5 }).name, "Gautam Buddha Nagar");
 
 console.log("ok");

@@ -220,17 +220,84 @@ export function loadOsmPlaces(file) {
   return grid;
 }
 
-// "Neighbourhood, City, State", e.g. "Colaba, Mumbai, Maharashtra".
-export function areaLabel(geo, osmPlaces, p, tags = {}) {
+// ---------- Administrative boundaries ----------
+
+// State (admin_level 4) and district (admin_level 5) outlines from the same extract, exported by
+// the workflow as admin.geojsonseq. Used so labels respect borders: a pump in East Delhi must not
+// be labelled Noida, and one in Gurugram must say Haryana, whatever town point happens to be closest.
+function ringContains(ring, x, y) {
+  let inside = false;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const [xi, yi] = ring[i];
+    const [xj, yj] = ring[j];
+    if ((yi > y) !== (yj > y) && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) inside = !inside;
+  }
+  return inside;
+}
+
+function polygonsContain(polys, x, y) {
+  return polys.some((rings) => ringContains(rings[0], x, y) && !rings.slice(1).some((h) => ringContains(h, x, y)));
+}
+
+export function makeAdmin(features) {
+  const levels = { 4: [], 5: [] };
+  for (const f of features) {
+    const t = f.properties || {};
+    const level = Number(t.admin_level);
+    if (!levels[level] || !f.geometry) continue;
+    const name = (t["name:en"] || t.name || "").replace(/\s+district$/i, "").trim();
+    if (!name) continue;
+    const polys = f.geometry.type === "Polygon" ? [f.geometry.coordinates]
+      : f.geometry.type === "MultiPolygon" ? f.geometry.coordinates : null;
+    if (!polys) continue;
+    let [w, s, e, n] = [180, 90, -180, -90];
+    for (const rings of polys) for (const [x, y] of rings[0]) {
+      if (x < w) w = x; if (x > e) e = x; if (y < s) s = y; if (y > n) n = y;
+    }
+    levels[level].push({ name, polys, bbox: [w, s, e, n] });
+  }
+  const find = (list, p) => list.find((a) => p.lng >= a.bbox[0] && p.lng <= a.bbox[2] && p.lat >= a.bbox[1] && p.lat <= a.bbox[3]
+    && polygonsContain(a.polys, p.lng, p.lat)) || null;
+  const memo = new WeakMap();
+  return {
+    counts: { states: levels[4].length, districts: levels[5].length },
+    state: (p) => find(levels[4], p),
+    district: (p) => {
+      if (typeof p === "object" && memo.has(p)) return memo.get(p);
+      const d = find(levels[5], p);
+      if (typeof p === "object") memo.set(p, d);
+      return d;
+    },
+  };
+}
+
+export function loadAdmin(file) {
+  if (!fs.existsSync(file)) { log(`  ${file} missing, labels will not respect borders`); return null; }
+  const features = fs.readFileSync(file, "utf8").split("\n")
+    .map((l) => l.replace(/^\x1e/, "").trim()).filter(Boolean).map((l) => JSON.parse(l));
+  const admin = makeAdmin(features);
+  log(`  boundaries: ${admin.counts.states} states, ${admin.counts.districts} districts`);
+  return admin;
+}
+
+// "Neighbourhood, City, State", e.g. "Colaba, Mumbai, Maharashtra". When boundaries are available,
+// the neighbourhood and city must be in the pump's own district; if no city point is, the district
+// name is used instead (e.g. "Gharoli, East Delhi, Delhi").
+export function areaLabel(geo, osmPlaces, p, tags = {}, admin = null) {
   const parts = [];
+  const district = admin ? admin.district(p) : null;
+  const same = (x) => !district || admin.district(x) === district;
   if (osmPlaces) {
-    const local = osmPlaces.nearest(p, 2, (x) => LOCAL_TYPES.has(x.type))
-      || osmPlaces.nearest(p, 3, (x) => x.type === "village" || x.type === "town");
-    const city = osmPlaces.nearest(p, 15, (x) => x.type === "city")
-      || osmPlaces.nearest(p, 8, (x) => x.type === "town")
-      || osmPlaces.nearest(p, 30, (x) => x.type === "city");
+    const local = osmPlaces.nearest(p, 2, (x) => LOCAL_TYPES.has(x.type) && same(x))
+      || osmPlaces.nearest(p, 3, (x) => (x.type === "village" || x.type === "town") && same(x));
+    const city = osmPlaces.nearest(p, 15, (x) => x.type === "city" && same(x))
+      || osmPlaces.nearest(p, 8, (x) => x.type === "town" && same(x))
+      || osmPlaces.nearest(p, 30, (x) => x.type === "city" && same(x));
     if (local) parts.push(local.item.name);
     if (city) parts.push(city.item.name);
+    else if (district) parts.push(district.name);
+  } else if (district) {
+    parts.push(district.name);
   }
   if (!parts.length) {
     const fromTags = tags["addr:suburb"] || tags["addr:city"] || tags["addr:district"];
@@ -238,7 +305,8 @@ export function areaLabel(geo, osmPlaces, p, tags = {}) {
   }
   const hit = geo ? geo.nearest(p, 60, (x) => x.country === "IN") : null;
   if (!parts.length && hit) parts.push(hit.km > 15 ? `near ${hit.item.name}` : hit.item.name);
-  const state = hit ? hit.item.state : tags["addr:state"];
+  const stateArea = admin ? admin.state(p) : null;
+  const state = stateArea ? stateArea.name : hit ? hit.item.state : tags["addr:state"];
   if (state) parts.push(state);
   return parts.filter((x, i) => x && parts.findIndex((y) => y.toLowerCase() === x.toLowerCase()) === i).join(", ");
 }
@@ -249,6 +317,7 @@ async function main() {
   log("OpenStreetMap...");
   const places = loadPlaces();
   const osmPlaces = loadOsmPlaces("places.geojsonseq");
+  const admin = loadAdmin("admin.geojsonseq");
   const osm = readOsmExtract("fuel.geojsonseq");
   log(`  fuel stations in the extract: ${osm.length}`);
   if (osm.length < 10000) throw new Error(`Only ${osm.length} OSM stations, refusing to overwrite data`);
@@ -263,7 +332,7 @@ async function main() {
     let flags = 0;
     if (/\bcoco\b/i.test(`${name} ${tags.operator || ""}`)) flags |= COCO;
     if (/^24\/7$/.test((tags.opening_hours || "").trim())) flags |= H24;
-    const s = { lat, lng, brand, name, flags, area: areaLabel(places, osmPlaces, { lat, lng }, tags), address: osmAddress(tags) };
+    const s = { lat, lng, brand, name, flags, area: areaLabel(places, osmPlaces, { lat, lng }, tags, admin), address: osmAddress(tags) };
     stations.push(s);
     grid.add(s);
   }
@@ -283,7 +352,7 @@ async function main() {
         s.name = ro.name;
         xpMatched++;
       } else {
-        const s = { lat: ro.lat, lng: ro.lng, brand: "IndianOil", name: ro.name, flags: E0 | coco, area: areaLabel(places, osmPlaces, ro) || ro.city, address: "" };
+        const s = { lat: ro.lat, lng: ro.lng, brand: "IndianOil", name: ro.name, flags: E0 | coco, area: areaLabel(places, osmPlaces, ro, {}, admin) || ro.city, address: "" };
         stations.push(s);
         grid.add(s);
         xpAdded++;
