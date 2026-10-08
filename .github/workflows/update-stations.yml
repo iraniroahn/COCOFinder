@@ -1,0 +1,24 @@
+name: Update station data
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ["claude/**"]
+    paths: ["scripts/**", ".github/workflows/update-stations.yml"]
+
+permissions:
+  contents: write
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 scripts/probe.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: raw
+          path: "*.html"
+          if-no-files-found: ignore
