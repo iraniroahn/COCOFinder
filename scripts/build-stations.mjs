@@ -2,7 +2,8 @@
 //   1. OpenStreetMap (Geofabrik India extract): every fuel station in India, with brand, name, address, hours.
 //   2. IndianOil's official "List of XP100 ROs" table at https://iocl.com/xp100 (ethanol free XP100).
 //   3. data/e0-manual.json: other ethanol free outlets named by the oil companies themselves.
-//   4. GeoNames: nearest town and state, so people can search by place name.
+//   4. Place names: neighbourhood and city from OpenStreetMap, state from GeoNames, so people can
+//      search by place name.
 //
 // Run by .github/workflows/update-stations.yml, which downloads the inputs first:
 // fuel.geojsonseq (see readOsmExtract), cities5000.txt and admin1CodesASCII.txt from GeoNames,
@@ -55,7 +56,7 @@ function distKm(a, b) {
 }
 
 // Simple spatial grid for nearest-neighbour lookups.
-class Grid {
+export class Grid {
   constructor(cell = 0.25) { this.cell = cell; this.map = new Map(); }
   key(lat, lng) { return `${Math.floor(lat / this.cell)}:${Math.floor(lng / this.cell)}`; }
   add(item) {
@@ -171,7 +172,7 @@ async function fetchXp100() {
 
 // ---------- 3. GeoNames places ----------
 
-// Loads GeoNames towns in and around India, used to label each pump with its nearest Indian town.
+// Loads GeoNames towns in and around India, used for the state name and as a fallback place name.
 function loadPlaces() {
   if (!fs.existsSync("cities5000.txt")) throw new Error("cities5000.txt missing (download it from GeoNames)");
   const states = new Map();
@@ -195,12 +196,51 @@ function loadPlaces() {
   return grid;
 }
 
-function areaLabel(places, p, fallbackTags = {}) {
-  if (places) {
-    const hit = places.nearest(p, 60, (x) => x.country === "IN");
-    if (hit) return [hit.km > 15 ? `near ${hit.item.name}` : hit.item.name, hit.item.state].filter(Boolean).join(", ");
+// OpenStreetMap place names (neighbourhoods, suburbs, villages, towns, cities) from the same
+// extract, exported by the workflow as places.geojsonseq. They are far denser than GeoNames,
+// which only knows "Mumbai" as a single point and would label Colaba as Dharavi.
+const LOCAL_TYPES = new Set(["suburb", "quarter", "neighbourhood"]);
+
+export function loadOsmPlaces(file) {
+  if (!fs.existsSync(file)) { log(`  ${file} missing, place names will be coarse`); return null; }
+  const grid = new Grid(0.1);
+  let n = 0;
+  for (const line of fs.readFileSync(file, "utf8").split("\n")) {
+    const l = line.replace(/^\x1e/, "").trim();
+    if (!l) continue;
+    const f = JSON.parse(l);
+    const t = f.properties || {};
+    const name = (t["name:en"] || t.name || "").trim();
+    const c = centroid(f.geometry);
+    if (!name || !t.place || !c) continue;
+    grid.add({ lat: c[1], lng: c[0], name, type: t.place });
+    n++;
   }
-  return [fallbackTags["addr:city"] || fallbackTags["addr:district"], fallbackTags["addr:state"]].filter(Boolean).join(", ");
+  log(`  OpenStreetMap places: ${n}`);
+  return grid;
+}
+
+// "Neighbourhood, City, State", e.g. "Colaba, Mumbai, Maharashtra".
+export function areaLabel(geo, osmPlaces, p, tags = {}) {
+  const parts = [];
+  if (osmPlaces) {
+    const local = osmPlaces.nearest(p, 2, (x) => LOCAL_TYPES.has(x.type))
+      || osmPlaces.nearest(p, 3, (x) => x.type === "village" || x.type === "town");
+    const city = osmPlaces.nearest(p, 15, (x) => x.type === "city")
+      || osmPlaces.nearest(p, 8, (x) => x.type === "town")
+      || osmPlaces.nearest(p, 30, (x) => x.type === "city");
+    if (local) parts.push(local.item.name);
+    if (city) parts.push(city.item.name);
+  }
+  if (!parts.length) {
+    const fromTags = tags["addr:suburb"] || tags["addr:city"] || tags["addr:district"];
+    if (fromTags) parts.push(fromTags);
+  }
+  const hit = geo ? geo.nearest(p, 60, (x) => x.country === "IN") : null;
+  if (!parts.length && hit) parts.push(hit.km > 15 ? `near ${hit.item.name}` : hit.item.name);
+  const state = hit ? hit.item.state : tags["addr:state"];
+  if (state) parts.push(state);
+  return parts.filter((x, i) => x && parts.findIndex((y) => y.toLowerCase() === x.toLowerCase()) === i).join(", ");
 }
 
 // ---------- Build ----------
@@ -208,6 +248,7 @@ function areaLabel(places, p, fallbackTags = {}) {
 async function main() {
   log("OpenStreetMap...");
   const places = loadPlaces();
+  const osmPlaces = loadOsmPlaces("places.geojsonseq");
   const osm = readOsmExtract("fuel.geojsonseq");
   log(`  fuel stations in the extract: ${osm.length}`);
   if (osm.length < 10000) throw new Error(`Only ${osm.length} OSM stations, refusing to overwrite data`);
@@ -222,7 +263,7 @@ async function main() {
     let flags = 0;
     if (/\bcoco\b/i.test(`${name} ${tags.operator || ""}`)) flags |= COCO;
     if (/^24\/7$/.test((tags.opening_hours || "").trim())) flags |= H24;
-    const s = { lat, lng, brand, name, flags, area: areaLabel(places, { lat, lng }, tags), address: osmAddress(tags) };
+    const s = { lat, lng, brand, name, flags, area: areaLabel(places, osmPlaces, { lat, lng }, tags), address: osmAddress(tags) };
     stations.push(s);
     grid.add(s);
   }
@@ -242,7 +283,7 @@ async function main() {
         s.name = ro.name;
         xpMatched++;
       } else {
-        const s = { lat: ro.lat, lng: ro.lng, brand: "IndianOil", name: ro.name, flags: E0 | coco, area: areaLabel(places, ro) || ro.city, address: "" };
+        const s = { lat: ro.lat, lng: ro.lng, brand: "IndianOil", name: ro.name, flags: E0 | coco, area: areaLabel(places, osmPlaces, ro) || ro.city, address: "" };
         stations.push(s);
         grid.add(s);
         xpAdded++;
@@ -281,7 +322,7 @@ async function main() {
     sources: {
       osm: "© OpenStreetMap contributors, ODbL, via Geofabrik. https://www.openstreetmap.org/copyright",
       xp100: "IndianOil list of XP100 ROs, https://iocl.com/xp100",
-      places: "GeoNames, CC BY 4.0, https://www.geonames.org/",
+      places: "Neighbourhood and city names from OpenStreetMap; states from GeoNames, CC BY 4.0, https://www.geonames.org/",
       manual: "data/e0-manual.json",
     },
     fields: ["lat", "lng", "brandIndex", "name", "flags(1=COCO,2=E0,4=24x7)", "area", "address"],

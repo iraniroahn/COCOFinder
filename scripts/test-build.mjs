@@ -1,6 +1,6 @@
 // Quick checks for the pure helpers in build-stations.mjs. Run: node scripts/test-build.mjs
 import assert from "node:assert/strict";
-import { classifyBrand, isGasOnly, titleCase } from "./build-stations.mjs";
+import { classifyBrand, isGasOnly, titleCase, areaLabel, Grid } from "./build-stations.mjs";
 
 const cases = [
   [{ brand: "Indian Oil", name: "Indian Oil" }, "IndianOil"],
@@ -40,4 +40,28 @@ assert.equal(isGasOnly({ name: "Petrol Pump" }, "Other"), false);
 assert.equal(titleCase("LANSDOWNE SER. STN(I-714)"), "Lansdowne Ser. Stn(I-714)");
 assert.equal(titleCase("IOC COCO MASJID MOTH"), "IOC COCO Masjid Moth");
 assert.equal(titleCase("Swagat RO Jasidih"), "Swagat RO Jasidih");
+// Place labels: South Mumbai pumps used to be labelled Dharavi or Kegaon (nearest GeoNames points).
+const grid = (items, cell) => { const g = new Grid(cell); items.forEach((x) => g.add(x)); return g; };
+const geo = grid([
+  { name: "Dharavi", lat: 19.0383, lng: 72.8483, country: "IN", state: "Maharashtra" },
+  { name: "Kegaon", lat: 18.9125, lng: 72.9447, country: "IN", state: "Maharashtra" },
+  { name: "Mumbai", lat: 19.0728, lng: 72.8826, country: "IN", state: "Maharashtra" },
+  { name: "Lonavla", lat: 18.7546, lng: 73.4062, country: "IN", state: "Maharashtra" },
+], 0.5);
+const osmPlaces = grid([
+  { name: "Mumbai", lat: 18.9388, lng: 72.8354, type: "city" },
+  { name: "Colaba", lat: 18.9067, lng: 72.8147, type: "suburb" },
+  { name: "Fort", lat: 18.9338, lng: 72.8356, type: "neighbourhood" },
+  { name: "Breach Candy", lat: 18.9696, lng: 72.8058, type: "neighbourhood" },
+  { name: "Dharavi", lat: 19.0400, lng: 72.8520, type: "suburb" },
+  { name: "Lonavala", lat: 18.7546, lng: 73.4062, type: "town" },
+], 0.1);
+assert.equal(areaLabel(geo, osmPlaces, { lat: 18.96558, lng: 72.80335 }), "Breach Candy, Mumbai, Maharashtra");
+assert.equal(areaLabel(geo, osmPlaces, { lat: 18.9338, lng: 72.8330 }), "Fort, Mumbai, Maharashtra");
+assert.equal(areaLabel(geo, osmPlaces, { lat: 19.0410, lng: 72.8530 }), "Dharavi, Mumbai, Maharashtra");
+assert.equal(areaLabel(geo, osmPlaces, { lat: 18.7550, lng: 73.4060 }), "Lonavala, Maharashtra");
+// No OpenStreetMap place nearby: fall back to the nearest GeoNames town.
+assert.equal(areaLabel(geo, osmPlaces, { lat: 18.85, lng: 73.30 }), "near Lonavla, Maharashtra");
+assert.equal(areaLabel(geo, null, { lat: 19.0390, lng: 72.8490 }), "Dharavi, Maharashtra");
+
 console.log("ok");
