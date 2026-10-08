@@ -15,7 +15,8 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
-      - run: bash scripts/probe.sh
+      - run: npm install --no-save playwright-core@1.56.1
+      - run: node scripts/probe.mjs
       - uses: actions/upload-artifact@v4
         if: always()
         with:
