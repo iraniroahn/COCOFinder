@@ -33,7 +33,7 @@ Availability changes and some pumps run out, so call ahead before a long drive.
 
 | Data | Source |
 | --- | --- |
-| Pump locations, brands, names, addresses, 24x7 hours | [OpenStreetMap](https://www.openstreetmap.org/) via the Overpass API (ODbL) |
+| Pump locations, brands, names, addresses, 24x7 hours | [OpenStreetMap](https://www.openstreetmap.org/) (ODbL), from the [Geofabrik](https://download.geofabrik.de/asia/india.html) India extract |
 | XP100 outlets | IndianOil's official list of XP100 outlets at [iocl.com/xp100](https://iocl.com/xp100) |
 | poWer 100 and Speed 100 outlets | Outlets named by HPCL and BPCL themselves, listed with sources in [`data/e0-manual.json`](data/e0-manual.json) |
 | COCO outlets | Pumps whose official or mapped name says COCO |
@@ -64,6 +64,9 @@ To rebuild the station data yourself:
 
 ```bash
 npm install --no-save playwright-core   # uses your installed Chrome
+curl -LO https://download.geofabrik.de/asia/india-latest.osm.pbf
+osmium tags-filter india-latest.osm.pbf nwr/amenity=fuel -o fuel.osm.pbf
+osmium export fuel.osm.pbf -f geojsonseq -o fuel.geojsonseq -a type,id
 curl -LO https://download.geonames.org/export/dump/cities5000.zip && unzip cities5000.zip
 curl -LO https://download.geonames.org/export/dump/admin1CodesASCII.txt
 node scripts/build-stations.mjs

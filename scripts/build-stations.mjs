@@ -1,23 +1,16 @@
 // Builds data/stations.json from public sources:
-//   1. OpenStreetMap (Overpass API): every fuel station in India, with brand, name, address, hours.
+//   1. OpenStreetMap (Geofabrik India extract): every fuel station in India, with brand, name, address, hours.
 //   2. IndianOil's official "List of XP100 ROs" table at https://iocl.com/xp100 (ethanol free XP100).
 //   3. data/e0-manual.json: other ethanol free outlets named by the oil companies themselves.
 //   4. GeoNames: nearest town and state, so people can search by place name.
 //
-// Run by .github/workflows/update-stations.yml. Locally: node scripts/build-stations.mjs
-// (needs `npm install --no-save playwright-core` and Chrome for the IndianOil step, plus
-// cities5000.txt and admin1CodesASCII.txt from https://download.geonames.org/export/dump/).
+// Run by .github/workflows/update-stations.yml, which downloads the inputs first:
+// fuel.geojsonseq (see readOsmExtract), cities5000.txt and admin1CodesASCII.txt from GeoNames,
+// and playwright-core plus Chrome for the IndianOil step.
 
 import fs from "node:fs";
-import { execFileSync } from "node:child_process";
 
 const OUT = "data/stations.json";
-const UA = "COCOFinder/1.0 (+https://github.com/iraniroahn/COCOFinder)";
-const OVERPASS = [
-  "https://overpass-api.de/api/interpreter",
-  "https://overpass.private.coffee/api/interpreter",
-  "https://overpass.kumi.systems/api/interpreter",
-];
 
 const BRANDS = ["IndianOil", "HP", "BPCL", "Jio-bp", "Shell", "Nayara", "Other"];
 const COCO = 1;
@@ -95,64 +88,41 @@ function inIndia(lat, lng) {
 
 // ---------- 1. OpenStreetMap ----------
 
-// Uses curl rather than fetch: Node's fetch could not connect to overpass-api.de from GitHub runners.
-function overpass(query, timeoutSec) {
-  let lastErr;
-  for (let attempt = 0; attempt < 4; attempt++) {
-    const url = OVERPASS[attempt % OVERPASS.length];
-    try {
-      const body = execFileSync("curl", [
-        "-sS", "--fail-with-body", "--max-time", String(timeoutSec + 60), "-A", UA,
-        "--data-urlencode", `data@-`, url,
-      ], { input: query, maxBuffer: 1024 * 1024 * 1024 });
-      return JSON.parse(body.toString("utf8"));
-    } catch (e) {
-      lastErr = new Error(`${url}: ${String(e.stderr || e.message).trim().slice(0, 300)}`);
-    }
-    log(`  overpass attempt ${attempt + 1} failed: ${lastErr.message}`);
-    sleepSync(10000 * (attempt + 1));
+// Reads fuel stations exported from Geofabrik's India extract by the workflow:
+//   osmium tags-filter india-latest.osm.pbf nwr/amenity=fuel -o fuel.osm.pbf
+//   osmium export fuel.osm.pbf -f geojsonseq -o fuel.geojsonseq
+function centroid(g) {
+  if (!g) return null;
+  const avg = (pts) => pts.length ? [pts.reduce((a, p) => a + p[0], 0) / pts.length, pts.reduce((a, p) => a + p[1], 0) / pts.length] : null;
+  switch (g.type) {
+    case "Point": return g.coordinates;
+    case "LineString": return avg(g.coordinates);
+    case "Polygon": return avg(g.coordinates[0]);
+    case "MultiPolygon": return avg(g.coordinates[0][0]);
+    default: return null;
   }
-  throw lastErr;
 }
 
-function sleepSync(ms) {
-  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
-}
-
-function fetchOsmStations() {
-  const all = new Map();
-  // Overpass returns partial results with a "remark" when a query runs out of time or memory,
-  // so each tile checks for that and splits itself into four smaller tiles when it happens.
-  const fetchTile = ([s, w, n, e], depth = 0) => {
-    const q = `[out:json][timeout:180];nwr["amenity"="fuel"](${s},${w},${n},${e});out center tags qt;`;
-    let data;
-    try {
-      data = overpass(q, 180);
-    } catch (err) {
-      if (depth >= 3) throw err;
-      data = { remark: `request failed: ${err.message}` };
-    }
-    if (data.remark && /error|failed/i.test(data.remark)) {
-      if (depth >= 3) throw new Error(`Tile ${s},${w},${n},${e} still incomplete: ${data.remark}`);
-      log(`  tile ${s},${w},${n},${e} incomplete (${data.remark.slice(0, 120)}), splitting`);
-      const mLat = (s + n) / 2;
-      const mLng = (w + e) / 2;
-      for (const t of [[s, w, mLat, mLng], [s, mLng, mLat, e], [mLat, w, n, mLng], [mLat, mLng, n, e]]) fetchTile(t, depth + 1);
-      return;
-    }
-    for (const el of data.elements) {
-      const lat = el.lat ?? el.center?.lat;
-      const lng = el.lon ?? el.center?.lon;
-      if (lat == null || lng == null) continue;
-      all.set(`${el.type}/${el.id}`, { lat, lng, tags: el.tags || {} });
-    }
-    log(`  tile ${s},${w},${n},${e}: ${data.elements.length} (total ${all.size})`);
-    sleepSync(2000);
-  };
-  for (let s = 6; s < 37.5; s += 4) {
-    for (let w = 68; w < 98; w += 5) fetchTile([s, w, Math.min(s + 4, 37.5), Math.min(w + 5, 98)]);
+export function readOsmExtract(file) {
+  const out = [];
+  const seen = new Grid(0.05);
+  // Nodes first, so a pump mapped as both a point and a building outline is kept once.
+  const features = fs.readFileSync(file, "utf8").split("\n")
+    .map((l) => l.replace(/^\x1e/, "").trim()).filter(Boolean).map((l) => JSON.parse(l))
+    .sort((x, y) => (x.geometry.type === "Point" ? 0 : 1) - (y.geometry.type === "Point" ? 0 : 1));
+  for (const f of features) {
+    const c = centroid(f.geometry);
+    if (!c) continue;
+    const p = { lat: c[1], lng: c[0] };
+    if (seen.nearest(p, 0.03)) continue;
+    const tags = { ...f.properties };
+    delete tags["@type"];
+    delete tags["@id"];
+    const s = { ...p, tags };
+    seen.add(s);
+    out.push(s);
   }
-  return [...all.values()];
+  return out;
 }
 
 function osmAddress(t) {
@@ -201,8 +171,7 @@ async function fetchXp100() {
 
 // ---------- 3. GeoNames places ----------
 
-// Loads GeoNames towns in and around India. Pumps whose nearest town is outside India are dropped,
-// since the Overpass tiles are plain bounding boxes that also cover neighbouring countries.
+// Loads GeoNames towns in and around India, used to label each pump with its nearest Indian town.
 function loadPlaces() {
   if (!fs.existsSync("cities5000.txt")) throw new Error("cities5000.txt missing (download it from GeoNames)");
   const states = new Map();
@@ -239,12 +208,8 @@ function areaLabel(places, p, fallbackTags = {}) {
 async function main() {
   log("OpenStreetMap...");
   const places = loadPlaces();
-  const osmAll = fetchOsmStations();
-  const osm = osmAll.filter((p) => {
-    const hit = places.nearest(p, 150);
-    return hit && hit.item.country === "IN";
-  });
-  log(`  in India: ${osm.length} of ${osmAll.length}`);
+  const osm = readOsmExtract("fuel.geojsonseq");
+  log(`  fuel stations in the extract: ${osm.length}`);
   if (osm.length < 10000) throw new Error(`Only ${osm.length} OSM stations, refusing to overwrite data`);
 
   const stations = [];
@@ -314,7 +279,7 @@ async function main() {
   const out = {
     generated: new Date().toISOString().slice(0, 10),
     sources: {
-      osm: "© OpenStreetMap contributors, ODbL. https://www.openstreetmap.org/copyright",
+      osm: "© OpenStreetMap contributors, ODbL, via Geofabrik. https://www.openstreetmap.org/copyright",
       xp100: "IndianOil list of XP100 ROs, https://iocl.com/xp100",
       places: "GeoNames, CC BY 4.0, https://www.geonames.org/",
       manual: "data/e0-manual.json",

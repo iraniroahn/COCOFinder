@@ -32,6 +32,14 @@ jobs:
       - name: Install headless browser driver
         run: npm install --no-save playwright-core@1.56.1
 
+      - name: Extract fuel stations from the OpenStreetMap India extract
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq osmium-tool
+          curl -sSfL -o india.osm.pbf https://download.geofabrik.de/asia/india-latest.osm.pbf
+          osmium tags-filter india.osm.pbf nwr/amenity=fuel -o fuel.osm.pbf --overwrite
+          osmium export fuel.osm.pbf -f geojsonseq -o fuel.geojsonseq --geometry-types=point,linestring,polygon -a type,id --overwrite
+          wc -l fuel.geojsonseq
+
       - name: Download GeoNames places
         run: |
           curl -sSfL -o cities5000.zip https://download.geonames.org/export/dump/cities5000.zip
