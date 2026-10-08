@@ -2,24 +2,56 @@ name: Update station data
 
 on:
   workflow_dispatch:
+  schedule:
+    - cron: "17 2 * * 1" # every Monday, 07:47 IST
   push:
-    branches: ["claude/**"]
-    paths: ["scripts/**", ".github/workflows/update-stations.yml"]
+    branches: ["main", "claude/**"]
+    paths:
+      - "scripts/**"
+      - "data/e0-manual.json"
+      - ".github/workflows/update-stations.yml"
 
 permissions:
   contents: write
 
+concurrency:
+  group: update-stations-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
-  probe:
+  build:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
-      - run: npm install --no-save playwright-core@1.56.1
-      - run: node scripts/probe.mjs
-      - uses: actions/upload-artifact@v4
-        if: always()
+
+      - uses: actions/setup-node@v4
         with:
-          name: raw
-          path: "*.html"
-          if-no-files-found: ignore
+          node-version: 22
+
+      - name: Install headless browser driver
+        run: npm install --no-save playwright-core@1.56.1
+
+      - name: Download GeoNames places
+        run: |
+          curl -sSfL -o cities5000.zip https://download.geonames.org/export/dump/cities5000.zip
+          unzip -o -q cities5000.zip
+          curl -sSfL -o admin1CodesASCII.txt https://download.geonames.org/export/dump/admin1CodesASCII.txt
+
+      - name: Test helpers
+        run: node scripts/test-build.mjs
+
+      - name: Build data/stations.json
+        run: node scripts/build-stations.mjs
+
+      - name: Commit updated data
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/stations.json
+          if git diff --cached --quiet; then
+            echo "No changes"
+          else
+            git commit -m "Update station data"
+            git push
+          fi

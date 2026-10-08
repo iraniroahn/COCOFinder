@@ -4,15 +4,16 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>COCO Finder</title>
-  <meta name="description" content="Find IndianOil XP100 fuel stations and COCO (Company Owned Company Operated) petrol pumps near you.">
+  <meta name="description" content="Find ethanol free (E0) petrol like XP100, poWer 100 and Speed 100, COCO operated pumps, and every IndianOil, HP and BPCL petrol pump near you.">
   <meta name="theme-color" content="#0b0d14">
   <meta property="og:title" content="COCO Finder">
-  <meta property="og:description" content="Find XP100 fuel stations and COCO operated petrol pumps near you.">
+  <meta property="og:description" content="Find XP100 and other ethanol free petrol, COCO pumps, and IndianOil, HP and BPCL pumps near you.">
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%E2%9B%BD%3C/text%3E%3C/svg%3E">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/MarkerCluster.min.css">
   <link rel="stylesheet" href="css/styles.css">
 </head>
 <body>
@@ -23,61 +24,88 @@
       <span class="logo" aria-hidden="true">⛽</span>
       <div>
         <h1>COCO Finder</h1>
-        <p class="tagline">Find <strong class="xp">XP100</strong> fuel stations and <strong class="coco">COCO</strong> operated IndianOil pumps near you</p>
+        <p class="tagline">Find <strong class="xp">ethanol free petrol</strong>, <strong class="coco">COCO</strong> pumps and every IndianOil, HP and BPCL pump near you</p>
       </div>
     </div>
-    <button id="locateBtn" class="btn btn-primary" type="button" aria-label="Find stations near me">
+    <button id="locateBtn" class="btn btn-primary" type="button" aria-label="Find pumps near me">
       <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8Zm8.94 3A9 9 0 0 0 13 3.06V1h-2v2.06A9 9 0 0 0 3.06 11H1v2h2.06A9 9 0 0 0 11 20.94V23h2v-2.06A9 9 0 0 0 20.94 13H23v-2h-2.06ZM12 19a7 7 0 1 1 0-14 7 7 0 0 1 0 14Z"/></svg>
       <span>Near me</span>
     </button>
   </header>
 
   <main class="layout">
-    <section class="panel" aria-label="Station list">
+    <section class="panel" aria-label="Pump list">
       <div class="controls glass">
-        <label class="search">
+        <form id="searchForm" class="search" role="search">
           <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M15.5 14h-.79l-.28-.27A6.47 6.47 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16a6.47 6.47 0 0 0 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5Zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14Z"/></svg>
-          <span class="sr-only">Search stations</span>
-          <input id="search" type="search" placeholder="Search by city, area or name" autocomplete="off">
-        </label>
-        <div class="chips" role="group" aria-label="Filter stations">
-          <button class="chip" data-filter="all" type="button">All <span class="count"></span></button>
-          <button class="chip chip-coco" data-filter="coco" type="button">COCO <span class="count"></span></button>
-          <button class="chip chip-xp" data-filter="xp100" type="button">XP100 <span class="count"></span></button>
-          <label class="toggle"><input id="only24" type="checkbox"> Open 24x7</label>
+          <label for="search" class="sr-only">Search pumps or a place</label>
+          <input id="search" type="search" enterkeyhint="search" placeholder="Pump name, or a city / area + Enter" autocomplete="off">
+          <button id="clearSearch" class="icon-btn" type="button" aria-label="Clear search" hidden>✕</button>
+        </form>
+
+        <div class="filter-group">
+          <span class="filter-label">Fuel &amp; type</span>
+          <div class="chips" role="group" aria-label="Fuel and outlet type">
+            <button id="fE0" class="chip chip-e0" type="button" aria-pressed="false" title="XP100, poWer 100 and Speed 100: petrol with no ethanol blend">🌿 Ethanol free (E0)</button>
+            <button id="fCoco" class="chip chip-coco" type="button" aria-pressed="false" title="Company Owned, Company Operated outlets">🏢 COCO</button>
+            <button id="f24" class="chip" type="button" aria-pressed="false">🕒 Open 24x7</button>
+          </div>
+        </div>
+
+        <div class="filter-group">
+          <span class="filter-label">Brand</span>
+          <div class="chips" role="group" aria-label="Brand">
+            <button class="chip" data-brand="all" type="button">All <span class="count"></span></button>
+            <button class="chip" data-brand="IndianOil" type="button" style="--brand:#f37021"><i class="swatch"></i>IndianOil <span class="count"></span></button>
+            <button class="chip" data-brand="HP" type="button" style="--brand:#3b82f6"><i class="swatch"></i>HP <span class="count"></span></button>
+            <button class="chip" data-brand="BPCL" type="button" style="--brand:#facc15"><i class="swatch"></i>BPCL <span class="count"></span></button>
+            <button class="chip" data-brand="Jio-bp" type="button" style="--brand:#22c55e"><i class="swatch"></i>Jio-bp <span class="count"></span></button>
+            <button class="chip" data-brand="Shell" type="button" style="--brand:#ef4444"><i class="swatch"></i>Shell <span class="count"></span></button>
+            <button class="chip" data-brand="Nayara" type="button" style="--brand:#a855f7"><i class="swatch"></i>Nayara <span class="count"></span></button>
+            <button class="chip" data-brand="Other" type="button" style="--brand:#9ca3af"><i class="swatch"></i>Other <span class="count"></span></button>
+          </div>
         </div>
       </div>
 
-      <div id="status" class="status" role="status" aria-live="polite"></div>
+      <div class="status-row">
+        <div id="status" class="status" role="status" aria-live="polite"></div>
+        <div id="anchor" class="anchor"></div>
+      </div>
       <ul id="list" class="list"></ul>
     </section>
 
     <section class="map-wrap glass" aria-label="Map">
       <div id="map"></div>
+      <div class="legend" aria-hidden="true">
+        <span><i class="pin-mini pin-mini-e0">E0</i>Ethanol free</span>
+        <span><i class="pin-mini">C</i>COCO</span>
+        <span><i class="dot-mini"></i>Other pumps</span>
+      </div>
     </section>
   </main>
 
   <section class="info">
     <article class="glass">
-      <h2><span class="dot dot-coco"></span>What is a COCO pump?</h2>
-      <p>COCO stands for <em>Company Owned, Company Operated</em>. These outlets are run directly by IndianOil rather than a dealer, so many drivers prefer them for consistent fuel quality, accurate measurement and standard service.</p>
+      <h2><span class="dot-i dot-e0"></span>Ethanol free (E0) petrol</h2>
+      <p>Regular petrol in India is now E20 (20% ethanol). The only petrol sold without ethanol is the 100 octane premium grade: <strong>XP100</strong> at IndianOil, <strong>poWer 100</strong> at HP and <strong>Speed 100</strong> at BPCL, and only at select pumps. Speed 97 and XP95 are not ethanol free.</p>
     </article>
     <article class="glass">
-      <h2><span class="dot dot-xp"></span>What is XP100?</h2>
-      <p>XP100 is IndianOil's 100 octane premium petrol, made for high performance cars and bikes. It is only sold at select outlets, which is why it helps to know where to find it before you head out.</p>
+      <h2><span class="dot-i dot-coco"></span>What is a COCO pump?</h2>
+      <p>COCO stands for <em>Company Owned, Company Operated</em>. These outlets are run directly by the oil company rather than a dealer, so many drivers prefer them for consistent fuel quality and accurate measurement.</p>
     </article>
     <article class="glass">
-      <h2><span class="dot"></span>Spot a mistake?</h2>
-      <p>Station data is community maintained and may be out of date. Always confirm with the outlet. Corrections and new stations are welcome on <a href="https://github.com/iraniroahn/COCOFinder/issues" target="_blank" rel="noopener">GitHub</a>.</p>
+      <h2><span class="dot-i"></span>Where the data comes from</h2>
+      <p>Pump locations come from <a href="https://www.openstreetmap.org/" target="_blank" rel="noopener">OpenStreetMap</a>. XP100 outlets come from IndianOil's official list. Stock changes, so call ahead before a long drive. Spot a mistake? <a href="https://github.com/iraniroahn/COCOFinder/issues" target="_blank" rel="noopener">Tell us on GitHub</a>.</p>
     </article>
   </section>
 
   <footer class="footer">
-    Not affiliated with Indian Oil Corporation Ltd. Map data © OpenStreetMap contributors.
+    <span id="updated"></span>
+    Not affiliated with IndianOil, HPCL, BPCL or any fuel retailer. Map data © OpenStreetMap contributors.
   </footer>
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
-  <script src="js/data.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/leaflet.markercluster.min.js"></script>
   <script src="js/app.js"></script>
 </body>
 </html>
