@@ -1,32 +1,56 @@
 # COCO Finder ⛽
 
-**A website to find IndianOil XP100 fuel stations and COCO (Company Owned, Company Operated) petrol pumps near you.**
+**A website to find XP100 and other ethanol free (non E20) petrol, COCO (Company Owned, Company Operated) fuel stations, and every IndianOil, HP and BPCL petrol pump in India.**
 
-Looking for 100 octane XP100 for your car or bike, or prefer filling up at a company operated outlet? COCO Finder shows them on a map, sorts them by distance from you and gets you directions in one tap.
+🌐 **Live site: https://iraniroahn.github.io/COCOFinder/**
+
+Since regular petrol in India went E20 (20% ethanol), the only petrol you can still buy without ethanol is the 100 octane premium grade, and only at select pumps. COCO Finder puts those pumps, company operated outlets and every other petrol pump on one map, sorted by distance from you.
 
 ## Features
 
-- **XP100 finder**: filter to stations that sell XP100 premium petrol.
-- **COCO finder**: filter to Company Owned, Company Operated IndianOil outlets.
-- **Interactive map**: colour coded pins (gold for XP100, orange for COCO, split for both) with station details in a popup.
-- **Near me**: uses your location to sort stations by distance and highlight the nearest one.
-- **Search**: by city, area or station name.
-- **Open 24x7 filter** for late night fill ups.
+- **Ethanol free (E0) filter**: pumps selling **XP100** (IndianOil), **poWer 100** (HP) or **Speed 100** (BPCL).
+- **COCO filter**: Company Owned, Company Operated outlets.
+- **Every petrol pump in India**, filterable by brand: IndianOil, HP, BPCL, Jio-bp, Shell, Nayara and others.
+- **Near me**: sorts pumps by distance from your location.
+- **Search a place**: type a city, area or landmark and press Enter to see the pumps closest to it, or type a pump name to filter.
+- **Interactive map**: brand coloured pins, clustering for dense areas, and "E0" pins for ethanol free pumps.
 - **One tap directions** through Google Maps.
-- **Shareable links**: filters and search are saved in the URL, e.g. `?filter=xp100&q=mumbai`.
-- **Mobile friendly**: works on phones, tablets and desktops. No sign up, no app install.
+- **Open 24x7 filter**.
+- **Shareable links**: filters are kept in the URL, e.g. `?e0=1&brand=IndianOil`.
+- **Mobile friendly**. No sign up, no app install.
 
-## What is COCO?
+## Ethanol free petrol: what counts
 
-COCO stands for **Company Owned, Company Operated**. These outlets are run directly by IndianOil rather than by a dealer, and many drivers prefer them for consistent fuel quality and accurate measurement.
+| Brand | Ethanol free grade | Not ethanol free |
+| --- | --- | --- |
+| IndianOil | XP100 | XP95, regular petrol |
+| HP | poWer 100 | poWer 95, regular petrol |
+| BPCL | Speed 100 | Speed 97, regular petrol |
 
-## What is XP100?
+Availability changes and some pumps run out, so call ahead before a long drive.
 
-XP100 is IndianOil's **100 octane premium petrol**, built for high performance vehicles. It is only available at select outlets, which is exactly what this site helps you find.
+## Where the data comes from
+
+| Data | Source |
+| --- | --- |
+| Pump locations, brands, names, addresses, 24x7 hours | [OpenStreetMap](https://www.openstreetmap.org/) via the Overpass API (ODbL) |
+| XP100 outlets | IndianOil's official list of XP100 outlets at [iocl.com/xp100](https://iocl.com/xp100) |
+| poWer 100 and Speed 100 outlets | Outlets named by HPCL and BPCL themselves, listed with sources in [`data/e0-manual.json`](data/e0-manual.json) |
+| COCO outlets | Pumps whose official or mapped name says COCO |
+| Town and state names | [GeoNames](https://www.geonames.org/) (CC BY 4.0) |
+
+HPCL and BPCL don't publish full lists of their poWer 100 and Speed 100 outlets, and there is no public list of all COCO outlets. Coverage of those two is therefore partial. Additions with a source link are very welcome.
+
+The data is rebuilt every Monday by a GitHub Action ([`update-stations.yml`](.github/workflows/update-stations.yml)), which runs [`scripts/build-stations.mjs`](scripts/build-stations.mjs) and commits the result to [`data/stations.json`](data/stations.json).
+
+## Adding or correcting stations
+
+- **Wrong or missing pump location?** Fix it on [OpenStreetMap](https://www.openstreetmap.org/) (tag it `amenity=fuel` with the right `brand`). It shows up here after the next weekly rebuild.
+- **Know a pump that sells poWer 100, Speed 100 or XP100?** Add it to [`data/e0-manual.json`](data/e0-manual.json) with a source link and open a pull request, or [open an issue](https://github.com/iraniroahn/COCOFinder/issues).
 
 ## Run it locally
 
-It is a plain static site with no build step.
+It is a static site with no build step.
 
 ```bash
 git clone https://github.com/iraniroahn/COCOFinder.git
@@ -34,41 +58,36 @@ cd COCOFinder
 python3 -m http.server 8000
 ```
 
-Then open <http://localhost:8000>. (A local server is needed because browsers only allow location access on `localhost` or HTTPS.)
+Then open <http://localhost:8000>. A local server is needed because browsers only allow location access on `localhost` or HTTPS.
 
-## Deploy
+To rebuild the station data yourself:
 
-Host it anywhere that serves static files. For GitHub Pages: **Settings → Pages → Deploy from a branch**, pick your branch and the `/ (root)` folder.
+```bash
+npm install --no-save playwright-core   # uses your installed Chrome
+curl -LO https://download.geonames.org/export/dump/cities5000.zip && unzip cities5000.zip
+curl -LO https://download.geonames.org/export/dump/admin1CodesASCII.txt
+node scripts/build-stations.mjs
+```
+
+## Hosting
+
+The site is deployed to GitHub Pages by [`pages.yml`](.github/workflows/pages.yml) on every push to `main` and after each data rebuild. If you fork the repo, set **Settings → Pages → Source** to **GitHub Actions**.
 
 ## Project structure
 
 ```
-index.html       Page layout
-css/styles.css   Styling
-js/data.js       Station list (edit this to add or fix stations)
-js/app.js        Search, filters, map and geolocation logic
+index.html                  Page layout
+css/styles.css              Styling
+js/app.js                   Search, filters, map, geolocation
+data/stations.json          Generated station data (do not edit by hand)
+data/e0-manual.json         Sourced poWer 100 / Speed 100 outlets
+scripts/build-stations.mjs  Data build script
 ```
-
-## Adding or correcting stations
-
-Station data lives in [`js/data.js`](js/data.js). Each entry looks like:
-
-```js
-{ id: "del-cp", name: "IOCL COCO Connaught Place", address: "...", city: "New Delhi",
-  lat: 28.6304, lng: 77.2177, coco: true, xp100: true, open24x7: true,
-  facilities: ["Petrol", "Diesel", "XP100", "Air"] }
-```
-
-Open a pull request with the change, or [open an issue](https://github.com/iraniroahn/COCOFinder/issues) with the station name, address and what it offers.
-
-> **Note:** the current list is sample data for demonstration. Please verify against IndianOil's official locator before relying on it.
 
 ## Built with
 
-- [Leaflet](https://leafletjs.com/) for the map
-- [OpenStreetMap](https://www.openstreetmap.org/) and [CARTO](https://carto.com/) map tiles
-- Vanilla HTML, CSS and JavaScript
+[Leaflet](https://leafletjs.com/), [Leaflet.markercluster](https://github.com/Leaflet/Leaflet.markercluster), [OpenStreetMap](https://www.openstreetmap.org/) and [CARTO](https://carto.com/) map tiles, [Nominatim](https://nominatim.org/) place search, and plain HTML, CSS and JavaScript.
 
 ## Disclaimer
 
-This is an independent project and is not affiliated with or endorsed by Indian Oil Corporation Ltd. Always confirm fuel availability with the outlet.
+An independent project, not affiliated with or endorsed by Indian Oil Corporation, Hindustan Petroleum, Bharat Petroleum or any other fuel retailer. Always confirm fuel availability with the outlet.

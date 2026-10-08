@@ -165,14 +165,32 @@
     return s.marker;
   }
 
+  // Small result sets (like ethanol free pumps) are shown as individual pins, large ones clustered.
+  const plain = L.layerGroup().addTo(map);
+  const CLUSTER_ABOVE = 400;
+
   let lastMarkerKey = "";
   function renderMarkers(visible) {
-    // Only rebuild the cluster layer when the filtered set actually changes.
+    // Only rebuild the marker layers when the filtered set actually changes.
     const key = `${state.brand}|${state.e0}|${state.coco}|${state.open24}|${state.query}`;
     if (key === lastMarkerKey) return;
     lastMarkerKey = key;
     cluster.clearLayers();
-    cluster.addLayers(visible.map(ensureMarker));
+    plain.clearLayers();
+    const markers = visible.map(ensureMarker);
+    if (markers.length > CLUSTER_ABOVE) cluster.addLayers(markers);
+    else markers.forEach((m) => plain.addLayer(m));
+  }
+
+  function showMarker(s, done) {
+    const m = ensureMarker(s);
+    if (cluster.hasLayer(m)) {
+      cluster.zoomToShowLayer(m, done);
+    } else {
+      if (!plain.hasLayer(m)) plain.addLayer(m);
+      map.flyTo([s.lat, s.lng], Math.max(map.getZoom(), 15), { duration: 0.8 });
+      map.once("moveend", done);
+    }
   }
 
   function refreshMarkerIcon(id, selected) {
@@ -309,7 +327,7 @@
     if (!s) return;
 
     if (fly) {
-      moveMap(() => cluster.zoomToShowLayer(ensureMarker(s), () => s.marker.openPopup()));
+      moveMap(() => showMarker(s, () => s.marker.openPopup()));
       // On small screens the map sits above the list, so bring it into view.
       if (window.matchMedia("(max-width: 900px)").matches) {
         document.querySelector(".map-wrap").scrollIntoView({ block: "start", behavior: "smooth" });

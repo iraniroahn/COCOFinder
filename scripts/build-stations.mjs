@@ -9,11 +9,13 @@
 // cities5000.txt and admin1CodesASCII.txt from https://download.geonames.org/export/dump/).
 
 import fs from "node:fs";
+import { execFileSync } from "node:child_process";
 
 const OUT = "data/stations.json";
 const UA = "COCOFinder/1.0 (+https://github.com/iraniroahn/COCOFinder)";
 const OVERPASS = [
   "https://overpass-api.de/api/interpreter",
+  "https://overpass.private.coffee/api/interpreter",
   "https://overpass.kumi.systems/api/interpreter",
 ];
 
@@ -22,7 +24,6 @@ const COCO = 1;
 const E0 = 2;
 const H24 = 4;
 
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const log = (...a) => console.log(...a);
 
 // ---------- Helpers ----------
@@ -94,43 +95,53 @@ function inIndia(lat, lng) {
 
 // ---------- 1. OpenStreetMap ----------
 
-async function overpass(query) {
+// Uses curl rather than fetch: Node's fetch could not connect to overpass-api.de from GitHub runners.
+function overpass(query, timeoutSec) {
   let lastErr;
   for (let attempt = 0; attempt < 6; attempt++) {
     const url = OVERPASS[attempt % OVERPASS.length];
     try {
-      const res = await fetch(url, {
-        method: "POST",
-        headers: { "User-Agent": UA, "Content-Type": "application/x-www-form-urlencoded" },
-        body: new URLSearchParams({ data: query }),
-      });
-      if (res.ok) return await res.json();
-      lastErr = new Error(`${url} HTTP ${res.status}`);
+      const body = execFileSync("curl", [
+        "-sS", "--fail-with-body", "--max-time", String(timeoutSec + 60), "-A", UA,
+        "--data-urlencode", `data@-`, url,
+      ], { input: query, maxBuffer: 1024 * 1024 * 1024 });
+      return JSON.parse(body.toString("utf8"));
     } catch (e) {
-      lastErr = e;
+      lastErr = new Error(`${url}: ${String(e.stderr || e.message).trim().slice(0, 300)}`);
     }
-    log(`  overpass retry ${attempt + 1}: ${lastErr.message}`);
-    await sleep(15000 * (attempt + 1));
+    log(`  overpass attempt ${attempt + 1} failed: ${lastErr.message}`);
+    sleepSync(20000 * (attempt + 1));
   }
   throw lastErr;
 }
 
-async function fetchOsmStations() {
+function sleepSync(ms) {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+}
+
+function fetchOsmStations() {
   const all = new Map();
-  // Split India into tiles so each query stays within Overpass limits.
-  const tiles = [];
-  for (let s = 6; s < 37.5; s += 4) for (let w = 68; w < 98; w += 5) tiles.push([s, w, Math.min(s + 4, 37.5), Math.min(w + 5, 98)]);
-  for (const [s, w, n, e] of tiles) {
-    const q = `[out:json][timeout:300];area["ISO3166-1"="IN"][admin_level=2]->.in;nwr["amenity"="fuel"](area.in)(${s},${w},${n},${e});out center tags qt;`;
-    const data = await overpass(q);
+  const add = (data) => {
     for (const el of data.elements) {
       const lat = el.lat ?? el.center?.lat;
       const lng = el.lon ?? el.center?.lon;
       if (lat == null || lng == null) continue;
       all.set(`${el.type}/${el.id}`, { lat, lng, tags: el.tags || {} });
     }
-    log(`  tile ${s},${w}: ${data.elements.length} (total ${all.size})`);
-    await sleep(3000);
+  };
+  const query = (bbox, t) =>
+    `[out:json][timeout:${t}][maxsize:2000000000];area["ISO3166-1"="IN"][admin_level=2]->.in;nwr["amenity"="fuel"](area.in)${bbox};out center tags qt;`;
+  try {
+    add(overpass(query("", 900), 900));
+    log(`  all India in one query: ${all.size}`);
+  } catch (e) {
+    // Fall back to four large tiles if the single query is refused.
+    log(`  single query failed (${e.message}), trying tiles`);
+    for (const [s, w, n, e2] of [[6, 68, 22, 83], [6, 83, 22, 98], [22, 68, 37.5, 83], [22, 83, 37.5, 98]]) {
+      add(overpass(query(`(${s},${w},${n},${e2})`, 600), 600));
+      log(`  tile ${s},${w}: total ${all.size}`);
+      sleepSync(5000);
+    }
   }
   return [...all.values()];
 }
@@ -214,7 +225,7 @@ function areaLabel(places, p, fallbackTags = {}) {
 
 async function main() {
   log("OpenStreetMap...");
-  const osm = await fetchOsmStations();
+  const osm = fetchOsmStations();
   if (osm.length < 5000) throw new Error(`Only ${osm.length} OSM stations, refusing to overwrite data`);
 
   const places = loadPlaces();

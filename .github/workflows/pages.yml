@@ -34,6 +34,13 @@ jobs:
         with:
           enablement: true
 
+      - name: Check CDN files referenced by the page
+        run: |
+          grep -oE 'https://cdnjs\.cloudflare\.com/[^"]+' index.html | while read -r url; do
+            curl -sSfIL -o /dev/null "$url" || { echo "Missing: $url"; exit 1; }
+            echo "ok $url"
+          done
+
       - name: Collect site files
         run: |
           mkdir _site

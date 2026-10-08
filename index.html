@@ -12,8 +12,8 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/MarkerCluster.min.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/MarkerCluster.css">
   <link rel="stylesheet" href="css/styles.css">
 </head>
 <body>
@@ -54,7 +54,7 @@
 
         <div class="filter-group">
           <span class="filter-label">Brand</span>
-          <div class="chips" role="group" aria-label="Brand">
+          <div class="chips chips-scroll" role="group" aria-label="Brand">
             <button class="chip" data-brand="all" type="button">All <span class="count"></span></button>
             <button class="chip" data-brand="IndianOil" type="button" style="--brand:#f37021"><i class="swatch"></i>IndianOil <span class="count"></span></button>
             <button class="chip" data-brand="HP" type="button" style="--brand:#3b82f6"><i class="swatch"></i>HP <span class="count"></span></button>
@@ -95,7 +95,7 @@
     </article>
     <article class="glass">
       <h2><span class="dot-i"></span>Where the data comes from</h2>
-      <p>Pump locations come from <a href="https://www.openstreetmap.org/" target="_blank" rel="noopener">OpenStreetMap</a>. XP100 outlets come from IndianOil's official list. Stock changes, so call ahead before a long drive. Spot a mistake? <a href="https://github.com/iraniroahn/COCOFinder/issues" target="_blank" rel="noopener">Tell us on GitHub</a>.</p>
+      <p>Pump locations come from <a href="https://www.openstreetmap.org/" target="_blank" rel="noopener">OpenStreetMap</a> and XP100 outlets from <a href="https://iocl.com/xp100" target="_blank" rel="noopener">IndianOil's official list</a>. HP and BPCL don't publish full poWer 100 and Speed 100 lists, so those are partial. Stock changes, so call ahead. Spot a mistake? <a href="https://github.com/iraniroahn/COCOFinder/issues" target="_blank" rel="noopener">Tell us on GitHub</a>.</p>
     </article>
   </section>
 
@@ -104,8 +104,8 @@
     Not affiliated with IndianOil, HPCL, BPCL or any fuel retailer. Map data © OpenStreetMap contributors.
   </footer>
 
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/leaflet.markercluster.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/leaflet.markercluster.js"></script>
   <script src="js/app.js"></script>
 </body>
 </html>

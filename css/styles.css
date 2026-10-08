@@ -130,13 +130,19 @@ h1 { margin: 0; font-size: clamp(1.5rem, 3vw, 2.1rem); font-weight: 800; letter-
 .icon-btn:hover { background: rgba(255, 255, 255, 0.2); }
 
 .filter-group { display: flex; flex-direction: column; gap: 6px; }
+.chips.chips-scroll {
+  flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; padding-bottom: 2px;
+  mask-image: linear-gradient(to right, #000 88%, transparent);
+}
+.chips-scroll::-webkit-scrollbar { display: none; }
 .filter-label { font-size: 0.72rem; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
 
 .chips { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .chip {
   display: inline-flex; align-items: center; gap: 6px;
-  padding: 8px 14px; border-radius: 999px; border: 1px solid var(--border);
-  background: transparent; color: var(--text); font: inherit; font-size: 0.9rem; font-weight: 600;
+  padding: 7px 12px; border-radius: 999px; border: 1px solid var(--border);
+  background: transparent; color: var(--text); font: inherit; font-size: 0.85rem; font-weight: 600;
+  white-space: nowrap; flex: none;
   cursor: pointer; transition: background 0.15s ease, border-color 0.15s ease;
 }
 .chip:hover { background: var(--surface-hover); }
