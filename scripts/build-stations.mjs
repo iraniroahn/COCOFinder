@@ -64,6 +64,22 @@ export class Grid {
     if (!this.map.has(k)) this.map.set(k, []);
     this.map.get(k).push(item);
   }
+  within(p, maxKm, filter = () => true) {
+    const r = Math.ceil(maxKm / (111 * this.cell)) + 1;
+    const ci = Math.floor(p.lat / this.cell);
+    const cj = Math.floor(p.lng / this.cell);
+    const out = [];
+    for (let i = ci - r; i <= ci + r; i++) {
+      for (let j = cj - r; j <= cj + r; j++) {
+        for (const it of this.map.get(`${i}:${j}`) || []) {
+          if (!filter(it)) continue;
+          const d = distKm(p, it);
+          if (d <= maxKm) out.push({ item: it, km: d });
+        }
+      }
+    }
+    return out;
+  }
   nearest(p, maxKm, filter = () => true) {
     const r = Math.ceil(maxKm / (111 * this.cell)) + 1;
     const ci = Math.floor(p.lat / this.cell);
@@ -213,7 +229,7 @@ export function loadOsmPlaces(file) {
     const name = (t["name:en"] || t.name || "").trim();
     const c = centroid(f.geometry);
     if (!name || !t.place || !c) continue;
-    grid.add({ lat: c[1], lng: c[0], name, type: t.place });
+    grid.add({ lat: c[1], lng: c[0], name, type: t.place, pop: parseInt(String(t.population || "").replace(/[^0-9]/g, ""), 10) || 0 });
     n++;
   }
   log(`  OpenStreetMap places: ${n}`);
@@ -280,6 +296,18 @@ export function loadAdmin(file) {
   return admin;
 }
 
+// Picks the city or town a point belongs to. Distance is weighted by population so a big city
+// wins over a smaller twin in the same district (Jubilee Hills is Hyderabad, not Secunderabad),
+// while a separate town right next to the point still wins.
+function pickCity(osmPlaces, p, same) {
+  const weight = (x) => Math.sqrt(Math.max(x.pop || (x.type === "city" ? 300000 : 30000), 20000));
+  const best = (list) => list.length ? list.reduce((a, b) => (a.km / weight(a.item) <= b.km / weight(b.item) ? a : b)) : null;
+  return best([
+    ...osmPlaces.within(p, 15, (x) => x.type === "city" && same(x)),
+    ...osmPlaces.within(p, 8, (x) => x.type === "town" && same(x)),
+  ]) || osmPlaces.nearest(p, 30, (x) => x.type === "city" && same(x));
+}
+
 // "Neighbourhood, City, State", e.g. "Colaba, Mumbai, Maharashtra". When boundaries are available,
 // the neighbourhood and city must be in the pump's own district; if no city point is, the district
 // name is used instead (e.g. "Gharoli, East Delhi, Delhi").
@@ -290,9 +318,7 @@ export function areaLabel(geo, osmPlaces, p, tags = {}, admin = null) {
   if (osmPlaces) {
     const local = osmPlaces.nearest(p, 2, (x) => LOCAL_TYPES.has(x.type) && same(x))
       || osmPlaces.nearest(p, 3, (x) => (x.type === "village" || x.type === "town") && same(x));
-    const city = osmPlaces.nearest(p, 15, (x) => x.type === "city" && same(x))
-      || osmPlaces.nearest(p, 8, (x) => x.type === "town" && same(x))
-      || osmPlaces.nearest(p, 30, (x) => x.type === "city" && same(x));
+    const city = pickCity(osmPlaces, p, same);
     if (local) parts.push(local.item.name);
     if (city) parts.push(city.item.name);
     else if (district) parts.push(district.name);

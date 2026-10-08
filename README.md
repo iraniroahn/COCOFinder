@@ -37,7 +37,7 @@ Availability changes and some pumps run out, so call ahead before a long drive.
 | XP100 outlets | IndianOil's official list of XP100 outlets at [iocl.com/xp100](https://iocl.com/xp100) |
 | poWer 100 and Speed 100 outlets | Outlets named by HPCL and BPCL themselves, listed with sources in [`data/e0-manual.json`](data/e0-manual.json) |
 | COCO outlets | Pumps whose official or mapped name says COCO |
-| Town and state names | [GeoNames](https://www.geonames.org/) (CC BY 4.0) |
+| Neighbourhood, city, district and state names | OpenStreetMap places and boundaries, with [GeoNames](https://www.geonames.org/) (CC BY 4.0) as a fallback |
 
 HPCL and BPCL don't publish full lists of their poWer 100 and Speed 100 outlets, and there is no public list of all COCO outlets. Coverage of those two is therefore partial. Additions with a source link are very welcome.
 

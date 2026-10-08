@@ -90,4 +90,15 @@ assert.equal(areaLabel(ncrGeo, ncrPlaces, { lat: 28.57, lng: 77.36 }, {}, admin)
 assert.equal(areaLabel(ncrGeo, ncrPlaces, { lat: 28.62, lng: 77.20 }, {}, admin), "Delhi");
 assert.equal(admin.district({ lat: 28.4, lng: 77.5 }).name, "Gautam Buddha Nagar");
 
+// Twin cities in one district: population decides unless the smaller one is much closer.
+const hydPlaces = grid([
+  { name: "Hyderabad", lat: 17.3850, lng: 78.4867, type: "city", pop: 6809970 },
+  { name: "Secunderabad", lat: 17.4399, lng: 78.4983, type: "city", pop: 217910 },
+  { name: "Jubilee Hills", lat: 17.4326, lng: 78.4071, type: "suburb" },
+  { name: "Marredpally", lat: 17.4480, lng: 78.5040, type: "suburb" },
+], 0.1);
+const hydGeo = grid([{ name: "Hyderabad", lat: 17.38, lng: 78.48, country: "IN", state: "Telangana" }], 0.5);
+assert.equal(areaLabel(hydGeo, hydPlaces, { lat: 17.4380, lng: 78.3996 }), "Jubilee Hills, Hyderabad, Telangana");
+assert.equal(areaLabel(hydGeo, hydPlaces, { lat: 17.4470, lng: 78.5030 }), "Marredpally, Secunderabad, Telangana");
+
 console.log("ok");
