@@ -40,7 +40,7 @@ jobs:
           osmium export fuel.osm.pbf -f geojsonseq -o fuel.geojsonseq --geometry-types=point,linestring,polygon -a type,id --overwrite
           osmium tags-filter india.osm.pbf n/place=city,town,suburb,quarter,neighbourhood,village -o places.osm.pbf --overwrite
           osmium export places.osm.pbf -f geojsonseq -o places.geojsonseq --geometry-types=point --overwrite
-          osmium tags-filter india.osm.pbf r/admin_level=4,5 -o admin.osm.pbf --overwrite
+          osmium tags-filter india.osm.pbf r/admin_level=4,5,6,7,8 -o admin.osm.pbf --overwrite
           osmium export admin.osm.pbf -f geojsonseq -o admin.geojsonseq --geometry-types=polygon --overwrite
           wc -l fuel.geojsonseq places.geojsonseq admin.geojsonseq
 

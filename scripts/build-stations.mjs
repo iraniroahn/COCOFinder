@@ -255,11 +255,30 @@ function polygonsContain(polys, x, y) {
   return polys.some((rings) => ringContains(rings[0], x, y) && !rings.slice(1).some((h) => ringContains(h, x, y)));
 }
 
+// "Navi Mumbai Municipal Corporation" -> "Navi Mumbai", "Greater Hyderabad Municipal Corporation"
+// -> "Hyderabad", "Brihanmumbai Municipal Corporation" -> "Mumbai". Null for anything else.
+const CORP_RE = /municipal corporation|municipal council|municipality|nagar nigam|mahanagar ?palika|mahanagara palike|nagar palika|city corporation|\bcorporation\b/i;
+export function corpCityName(name) {
+  if (!CORP_RE.test(name || "")) return null;
+  let n = name
+    .replace(/\b(city municipal corporation|municipal corporation|municipal council|municipality|nagar nigam|mahanagar ?palika|mahanagara palike|nagar palika parishad|nagar palika|city corporation|corporation)\b/gi, " ")
+    .replace(/\bof\b/gi, " ").replace(/[(),]/g, " ").replace(/\s+/g, " ").trim()
+    .replace(/^(greater|bruhat|brihat)\s+/i, "");
+  if (/^brihan ?mumbai$/i.test(n)) n = "Mumbai";
+  return n.length >= 3 && /^[\x20-\x7E]+$/.test(n) ? n : null;
+}
+
 export function makeAdmin(features) {
-  const levels = { 4: [], 5: [] };
+  const levels = { 4: [], 5: [], corp: [] };
   for (const f of features) {
     const t = f.properties || {};
-    const level = Number(t.admin_level);
+    let level = Number(t.admin_level);
+    if (level >= 6 && level <= 8) {
+      const city = corpCityName(t["name:en"] || t.name);
+      if (!city) continue;
+      t["name:en"] = city;
+      level = "corp";
+    }
     if (!levels[level] || !f.geometry) continue;
     const name = (t["name:en"] || t.name || "").replace(/\s+district$/i, "").trim();
     if (!name) continue;
@@ -274,26 +293,48 @@ export function makeAdmin(features) {
   }
   const find = (list, p) => list.find((a) => p.lng >= a.bbox[0] && p.lng <= a.bbox[2] && p.lat >= a.bbox[1] && p.lat <= a.bbox[3]
     && polygonsContain(a.polys, p.lng, p.lat)) || null;
-  const memo = new WeakMap();
+  const memoized = (list) => {
+    const memo = new WeakMap();
+    return (p) => {
+      if (memo.has(p)) return memo.get(p);
+      const a = find(list, p);
+      memo.set(p, a);
+      return a;
+    };
+  };
   return {
-    counts: { states: levels[4].length, districts: levels[5].length },
+    counts: { states: levels[4].length, districts: levels[5].length, corporations: levels.corp.length },
+    corpNames: levels.corp.map((a) => a.name),
     state: (p) => find(levels[4], p),
-    district: (p) => {
-      if (typeof p === "object" && memo.has(p)) return memo.get(p);
-      const d = find(levels[5], p);
-      if (typeof p === "object") memo.set(p, d);
-      return d;
-    },
+    district: memoized(levels[5]),
+    corp: memoized(levels.corp),
   };
 }
 
-export function loadAdmin(file) {
+export async function loadAdmin(file) {
   if (!fs.existsSync(file)) { log(`  ${file} missing, labels will not respect borders`); return null; }
-  const features = fs.readFileSync(file, "utf8").split("\n")
-    .map((l) => l.replace(/^\x1e/, "").trim()).filter(Boolean).map((l) => JSON.parse(l));
+  const { createInterface } = await import("node:readline");
+  const features = [];
+  for await (const line of createInterface({ input: fs.createReadStream(file), crlfDelay: Infinity })) {
+    const l = line.replace(/^\x1e/, "").trim();
+    if (!l) continue;
+    const f = JSON.parse(l);
+    const t = f.properties || {};
+    const level = Number(t.admin_level);
+    // Keep states, districts and city corporations; drop the many other level 6-8 areas early.
+    if (level === 4 || level === 5 || (level >= 6 && level <= 8 && corpCityName(t["name:en"] || t.name))) features.push(f);
+  }
   const admin = makeAdmin(features);
-  log(`  boundaries: ${admin.counts.states} states, ${admin.counts.districts} districts`);
+  log(`  boundaries: ${admin.counts.states} states, ${admin.counts.districts} districts, ${admin.counts.corporations} city corporations`);
+  log(`  e.g. ${admin.corpNames.slice(0, 25).join(", ")}`);
   return admin;
+}
+
+// Rough radius of a city's built-up area, from its population: a pump farther out than this is
+// "near" the city rather than in it.
+function cityRadiusKm(x) {
+  const pop = x.pop || (x.type === "city" ? 300000 : 30000);
+  return Math.min(25, Math.max(3, 12 * Math.sqrt(pop / 1e6)));
 }
 
 // Picks the city or town a point belongs to. Distance is weighted by population so a big city
@@ -314,16 +355,26 @@ function pickCity(osmPlaces, p, same) {
 export function areaLabel(geo, osmPlaces, p, tags = {}, admin = null) {
   const parts = [];
   const district = admin ? admin.district(p) : null;
+  const corp = admin ? admin.corp(p) : null;
   const same = (x) => !district || admin.district(x) === district;
   if (osmPlaces) {
     const local = osmPlaces.nearest(p, 2, (x) => LOCAL_TYPES.has(x.type) && same(x))
       || osmPlaces.nearest(p, 3, (x) => (x.type === "village" || x.type === "town") && same(x));
-    const city = pickCity(osmPlaces, p, same);
     if (local) parts.push(local.item.name);
-    if (city) parts.push(city.item.name);
-    else if (district) parts.push(district.name);
-  } else if (district) {
-    parts.push(district.name);
+    if (corp) {
+      // Inside a city corporation: name a city point within it (Secunderabad inside Greater
+      // Hyderabad), otherwise the corporation's city name.
+      const city = pickCity(osmPlaces, p, (x) => admin.corp(x) === corp);
+      parts.push(city ? city.item.name : corp.name);
+    } else {
+      const city = pickCity(osmPlaces, p, same);
+      // An urban neighbourhood means the pump is in the city; a village or nothing may mean it's outside.
+      const urban = local && LOCAL_TYPES.has(local.item.type);
+      if (city) parts.push(!urban && city.km > cityRadiusKm(city.item) ? `near ${city.item.name}` : city.item.name);
+      else if (district) parts.push(district.name);
+    }
+  } else if (corp || district) {
+    parts.push((corp || district).name);
   }
   if (!parts.length) {
     const fromTags = tags["addr:suburb"] || tags["addr:city"] || tags["addr:district"];
@@ -343,7 +394,7 @@ async function main() {
   log("OpenStreetMap...");
   const places = loadPlaces();
   const osmPlaces = loadOsmPlaces("places.geojsonseq");
-  const admin = loadAdmin("admin.geojsonseq");
+  const admin = await loadAdmin("admin.geojsonseq");
   const osm = readOsmExtract("fuel.geojsonseq");
   log(`  fuel stations in the extract: ${osm.length}`);
   if (osm.length < 10000) throw new Error(`Only ${osm.length} OSM stations, refusing to overwrite data`);

@@ -1,6 +1,6 @@
 // Quick checks for the pure helpers in build-stations.mjs. Run: node scripts/test-build.mjs
 import assert from "node:assert/strict";
-import { classifyBrand, isGasOnly, titleCase, areaLabel, Grid, makeAdmin } from "./build-stations.mjs";
+import { classifyBrand, isGasOnly, titleCase, areaLabel, Grid, makeAdmin, corpCityName } from "./build-stations.mjs";
 
 const cases = [
   [{ brand: "Indian Oil", name: "Indian Oil" }, "IndianOil"],
@@ -100,5 +100,40 @@ const hydPlaces = grid([
 const hydGeo = grid([{ name: "Hyderabad", lat: 17.38, lng: 78.48, country: "IN", state: "Telangana" }], 0.5);
 assert.equal(areaLabel(hydGeo, hydPlaces, { lat: 17.4380, lng: 78.3996 }), "Jubilee Hills, Hyderabad, Telangana");
 assert.equal(areaLabel(hydGeo, hydPlaces, { lat: 17.4470, lng: 78.5030 }), "Marredpally, Secunderabad, Telangana");
+
+// City corporation names.
+assert.equal(corpCityName("Navi Mumbai Municipal Corporation"), "Navi Mumbai");
+assert.equal(corpCityName("Greater Hyderabad Municipal Corporation"), "Hyderabad");
+assert.equal(corpCityName("Brihanmumbai Municipal Corporation"), "Mumbai");
+assert.equal(corpCityName("Bruhat Bengaluru Mahanagara Palike"), "Bengaluru");
+assert.equal(corpCityName("Municipal Corporation of Delhi"), "Delhi");
+assert.equal(corpCityName("Alandi Municipal Council"), "Alandi");
+assert.equal(corpCityName("Haveli Taluka"), null);
+assert.equal(corpCityName("ठाणे महानगरपालिका"), null);
+
+// Inside a city corporation the corporation decides the city: Ghansoli is Navi Mumbai even though
+// the Thane city point is nearer.
+const mmr = makeAdmin([
+  area("Maharashtra", 4, box(72.6, 18.8, 73.3, 19.4)),
+  area("Thane", 5, box(72.9, 19.0, 73.3, 19.4)),
+  area("Thane Municipal Corporation", 8, box(72.93, 19.17, 73.0, 19.3)),
+  area("Navi Mumbai Municipal Corporation", 8, box(72.97, 18.98, 73.1, 19.17)),
+]);
+const mmrPlaces = grid([
+  { name: "Thane", lat: 19.1970, lng: 72.9700, type: "city", pop: 1841000 },
+  { name: "Navi Mumbai", lat: 19.0330, lng: 73.0297, type: "city", pop: 1120000 },
+  { name: "Ghansoli", lat: 19.1180, lng: 73.0010, type: "suburb" },
+], 0.1);
+const mmrGeo = grid([{ name: "Thane", lat: 19.2, lng: 72.97, country: "IN", state: "Maharashtra" }], 0.5);
+assert.equal(areaLabel(mmrGeo, mmrPlaces, { lat: 19.12183, lng: 72.99889 }, {}, mmr), "Ghansoli, Navi Mumbai, Maharashtra");
+assert.equal(areaLabel(mmrGeo, mmrPlaces, { lat: 19.19, lng: 72.97 }, {}, mmr), "Thane, Maharashtra");
+
+// Rural pump 18 km from a city: "near" the city, not in it.
+const cbePlaces = grid([
+  { name: "Coimbatore", lat: 11.0168, lng: 76.9558, type: "city", pop: 1050721 },
+  { name: "Navakkarai", lat: 10.8680, lng: 76.8800, type: "village" },
+], 0.1);
+const cbeGeo = grid([{ name: "Coimbatore", lat: 11.0, lng: 76.96, country: "IN", state: "Tamil Nadu" }], 0.5);
+assert.equal(areaLabel(cbeGeo, cbePlaces, { lat: 10.86717, lng: 76.88254 }), "Navakkarai, near Coimbatore, Tamil Nadu");
 
 console.log("ok");
