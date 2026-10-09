@@ -64,6 +64,9 @@ export class Grid {
     if (!this.map.has(k)) this.map.set(k, []);
     this.map.get(k).push(item);
   }
+  all() {
+    return [...this.map.values()].flat();
+  }
   within(p, maxKm, filter = () => true) {
     const r = Math.ceil(maxKm / (111 * this.cell)) + 1;
     const ci = Math.floor(p.lat / this.cell);
@@ -263,20 +266,35 @@ export function corpCityName(name) {
   let n = name
     .replace(/\b(city municipal corporation|municipal corporation|municipal council|municipality|nagar nigam|mahanagar ?palika|mahanagara palike|nagar palika parishad|nagar palika|city corporation|corporation)\b/gi, " ")
     .replace(/\bof\b/gi, " ").replace(/[(),]/g, " ").replace(/\s+/g, " ").trim()
-    .replace(/^(greater|bruhat|brihat)\s+/i, "");
+    .replace(/\b(muncipal|municipal|limits|urban)\b/gi, " ").replace(/\s+/g, " ").trim()
+    .replace(/^(greater|bruhat|brihat)\s+/i, "")
+    .replace(/\s+(north|south|east|west|central)$/i, "");
   if (/^brihan ?mumbai$/i.test(n)) n = "Mumbai";
   return n.length >= 3 && /^[\x20-\x7E]+$/.test(n) ? n : null;
 }
 
-export function makeAdmin(features) {
+const normName = (n) => String(n || "").toLowerCase().replace(/[^a-z]/g, "");
+
+// cityPlaces: OpenStreetMap city and town points. A level 7-8 area counts as a city boundary when
+// it is named like a municipal corporation, or when a city/town point of the same name lies in it
+// (OSM often names city boundaries just "Navi Mumbai" or "Pune").
+export function makeAdmin(features, cityPlaces = []) {
   const levels = { 4: [], 5: [], corp: [] };
   for (const f of features) {
     const t = f.properties || {};
     let level = Number(t.admin_level);
     if (level >= 6 && level <= 8) {
-      const city = corpCityName(t["name:en"] || t.name);
+      const raw = t["name:en"] || t.name;
+      let city = corpCityName(raw);
+      if (!city && level >= 7 && f.geometry) {
+        const polys = f.geometry.type === "Polygon" ? [f.geometry.coordinates]
+          : f.geometry.type === "MultiPolygon" ? f.geometry.coordinates : [];
+        const named = cityPlaces.find((c) => normName(c.name) === normName(raw) && polygonsContain(polys, c.lng, c.lat));
+        if (named) city = named.name;
+      }
       if (!city) continue;
       t["name:en"] = city;
+      t.admin_level_num = level;
       level = "corp";
     }
     if (!levels[level] || !f.geometry) continue;
@@ -289,8 +307,10 @@ export function makeAdmin(features) {
     for (const rings of polys) for (const [x, y] of rings[0]) {
       if (x < w) w = x; if (x > e) e = x; if (y < s) s = y; if (y > n) n = y;
     }
-    levels[level].push({ name, polys, bbox: [w, s, e, n] });
+    levels[level].push({ name, polys, bbox: [w, s, e, n], rank: t.admin_level_num || 0 });
   }
+  // Most specific first, so a level 8 city boundary wins over a level 6 one around it.
+  levels.corp.sort((a, b) => b.rank - a.rank);
   const find = (list, p) => list.find((a) => p.lng >= a.bbox[0] && p.lng <= a.bbox[2] && p.lat >= a.bbox[1] && p.lat <= a.bbox[3]
     && polygonsContain(a.polys, p.lng, p.lat)) || null;
   const memoized = (list) => {
@@ -311,7 +331,7 @@ export function makeAdmin(features) {
   };
 }
 
-export async function loadAdmin(file) {
+export async function loadAdmin(file, osmPlaces) {
   if (!fs.existsSync(file)) { log(`  ${file} missing, labels will not respect borders`); return null; }
   const { createInterface } = await import("node:readline");
   const features = [];
@@ -322,11 +342,13 @@ export async function loadAdmin(file) {
     const t = f.properties || {};
     const level = Number(t.admin_level);
     // Keep states, districts and city corporations; drop the many other level 6-8 areas early.
-    if (level === 4 || level === 5 || (level >= 6 && level <= 8 && corpCityName(t["name:en"] || t.name))) features.push(f);
+    if (level === 4 || level === 5 || (level >= 6 && level <= 8 && corpCityName(t["name:en"] || t.name))
+      || ((level === 7 || level === 8) && (t["name:en"] || t.name))) features.push(f);
   }
-  const admin = makeAdmin(features);
+  const cityPlaces = osmPlaces ? osmPlaces.all().filter((x) => x.type === "city" || x.type === "town") : [];
+  const admin = makeAdmin(features, cityPlaces);
   log(`  boundaries: ${admin.counts.states} states, ${admin.counts.districts} districts, ${admin.counts.corporations} city corporations`);
-  log(`  e.g. ${admin.corpNames.slice(0, 25).join(", ")}`);
+  log(`  e.g. ${[...new Set(admin.corpNames)].slice(0, 40).join(", ")}`);
   return admin;
 }
 
@@ -394,7 +416,7 @@ async function main() {
   log("OpenStreetMap...");
   const places = loadPlaces();
   const osmPlaces = loadOsmPlaces("places.geojsonseq");
-  const admin = await loadAdmin("admin.geojsonseq");
+  const admin = await loadAdmin("admin.geojsonseq", osmPlaces);
   const osm = readOsmExtract("fuel.geojsonseq");
   log(`  fuel stations in the extract: ${osm.length}`);
   if (osm.length < 10000) throw new Error(`Only ${osm.length} OSM stations, refusing to overwrite data`);

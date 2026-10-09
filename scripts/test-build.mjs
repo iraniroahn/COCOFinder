@@ -110,6 +110,9 @@ assert.equal(corpCityName("Municipal Corporation of Delhi"), "Delhi");
 assert.equal(corpCityName("Alandi Municipal Council"), "Alandi");
 assert.equal(corpCityName("Haveli Taluka"), null);
 assert.equal(corpCityName("ठाणे महानगरपालिका"), null);
+assert.equal(corpCityName("Nagpur Muncipal Corporation"), "Nagpur");
+assert.equal(corpCityName("Bengaluru South City Corporation"), "Bengaluru");
+assert.equal(corpCityName("Patna Urban Municipal Corporation"), "Patna");
 
 // Inside a city corporation the corporation decides the city: Ghansoli is Navi Mumbai even though
 // the Thane city point is nearer.
@@ -127,6 +130,16 @@ const mmrPlaces = grid([
 const mmrGeo = grid([{ name: "Thane", lat: 19.2, lng: 72.97, country: "IN", state: "Maharashtra" }], 0.5);
 assert.equal(areaLabel(mmrGeo, mmrPlaces, { lat: 19.12183, lng: 72.99889 }, {}, mmr), "Ghansoli, Navi Mumbai, Maharashtra");
 assert.equal(areaLabel(mmrGeo, mmrPlaces, { lat: 19.19, lng: 72.97 }, {}, mmr), "Thane, Maharashtra");
+
+const mmr2 = makeAdmin([
+  area("Maharashtra", 4, box(72.6, 18.8, 73.3, 19.4)),
+  area("Thane", 5, box(72.9, 19.0, 73.3, 19.4)),
+  area("Thane", 6, box(72.9, 19.0, 73.3, 19.4)),
+  area("Navi Mumbai", 8, box(72.97, 18.98, 73.1, 19.17)),
+  area("Kopri", 8, box(72.97, 19.17, 73.0, 19.2)),
+], mmrPlaces.all().filter((x) => x.type === "city"));
+assert.equal(areaLabel(mmrGeo, mmrPlaces, { lat: 19.12183, lng: 72.99889 }, {}, mmr2), "Ghansoli, Navi Mumbai, Maharashtra");
+assert.equal(mmr2.counts.corporations, 1);
 
 // Rural pump 18 km from a city: "near" the city, not in it.
 const cbePlaces = grid([
